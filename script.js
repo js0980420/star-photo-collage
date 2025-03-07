@@ -1,3 +1,4 @@
+// 使用 React 創建演員組圖製作平台
 const ActorPlatformPreview = () => {
   const [currentPage, setCurrentPage] = React.useState('registration'); // 'registration' or 'portfolio'
   
@@ -361,3 +362,39 @@ const ActorPlatformPreview = () => {
                   </ul>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+  
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-slate-800 text-white py-6">
+        <div className="container mx-auto text-center px-4">
+          <h1 className="text-3xl font-bold mb-2">演員組圖製作平台</h1>
+          <p className="text-gray-300">快速製作演員組圖，提升試鏡機會</p>
+        </div>
+      </header>
+      
+      {/* Main content */}
+      {currentPage === 'registration' ? (
+        <RegistrationComponent />
+      ) : (
+        <PortfolioComponent />
+      )}
+      
+      {/* Footer */}
+      <footer className="bg-slate-800 text-white py-4 text-center">
+        <div className="container mx-auto">
+          <p>演員組圖製作平台 © 2025 版權所有 by Alex Wang</p>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+// 渲染應用程序到 DOM
+ReactDOM.render(<ActorPlatformPreview />, document.getElementById('root'));
