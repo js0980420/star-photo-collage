@@ -360,7 +360,6 @@ const ActorPlatformPreview = () => {
                     <li>• 電話：{personalInfo.phone || "未填寫"}</li>
                     <li>• 居住地：{personalInfo.location || "未填寫"}</li>
                   </ul>
-                </div>
               </div>
             </div>
           </div>
