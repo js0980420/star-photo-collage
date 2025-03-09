@@ -1,23 +1,23 @@
 // 使用 React 創建演員組圖製作平台
 const ActorPlatformPreview = () => {
   const [currentPage, setCurrentPage] = React.useState('registration'); // 'registration' or 'portfolio'
-  
+
   // Registration component states
   const [showPassword, setShowPassword] = React.useState(false);
   const [newsletter, setNewsletter] = React.useState(true);
-  
+
   // Refs instead of state for form inputs to prevent re-renders during typing
   const emailRef = React.useRef(null);
   const passwordRef = React.useRef(null);
-  
+
   // Portfolio component states
   const [activeTab, setActiveTab] = React.useState('upload');
-  
+
   // Sample image URLs - all with same portrait dimensions for consistency
   const placeholderCloseup = "https://via.placeholder.com/400x550";
   const placeholderFullbody = "https://via.placeholder.com/400x550";
   const placeholderHalfbody = "https://via.placeholder.com/400x550";
-  
+
   // Sample personal info state
   const [personalInfo, setPersonalInfo] = React.useState({
     name: "",
@@ -27,7 +27,7 @@ const ActorPlatformPreview = () => {
     phone: "",
     location: ""
   });
-  
+
   const handleSubmit = (e) => {
     e.preventDefault();
     // Here you would handle the registration
@@ -39,7 +39,7 @@ const ActorPlatformPreview = () => {
     console.log(formData);
     setCurrentPage('portfolio'); // Redirect to portfolio page after registration
   };
-  
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setPersonalInfo(prev => ({
@@ -47,13 +47,13 @@ const ActorPlatformPreview = () => {
       [name]: value
     }));
   };
-  
+
   // Registration Component
   const RegistrationComponent = () => (
     <div className="container mx-auto p-4 flex-grow flex items-center justify-center">
       <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
         <h2 className="text-2xl font-bold mb-6 text-center text-slate-700">開始使用</h2>
-        
+
         {/* Social login buttons */}
         <div className="space-y-4 mb-6">
           {/* Facebook Sign up */}
@@ -66,7 +66,7 @@ const ActorPlatformPreview = () => {
             </svg>
             使用 Facebook 註冊 / 登入
           </button>
-          
+
           {/* Google Sign up */}
           <button 
             className="w-full flex items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50 transition-colors"
@@ -81,17 +81,17 @@ const ActorPlatformPreview = () => {
             使用 Google 註冊 / 登入
           </button>
         </div>
-        
+
         <div className="flex items-center my-4">
           <hr className="flex-grow border-gray-300" />
           <span className="px-3 text-gray-500 text-sm">或</span>
           <hr className="flex-grow border-gray-300" />
         </div>
-        
+
         <div className="space-y-4 mb-4">
           <p className="text-center text-gray-600">使用 Email 登入時，如您尚未註冊，系統將會自動為您建立帳號</p>
         </div>
-        
+
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             {/* Email Field (as Username) */}
@@ -106,7 +106,7 @@ const ActorPlatformPreview = () => {
                 required
               />
             </div>
-            
+
             {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-gray-700 font-medium mb-1">密碼</label>
@@ -140,7 +140,7 @@ const ActorPlatformPreview = () => {
               </div>
               <p className="text-xs text-gray-500 mt-2">目前為網頁版測試階段，註冊後您將優先獲得未來App版本的最新消息</p>
             </div>
-            
+
             {/* Newsletter Opt-in */}
             <div className="flex items-start mt-4">
               <div className="flex items-center h-5">
@@ -156,7 +156,7 @@ const ActorPlatformPreview = () => {
                 我願意接收最新的產品更新電子報，瞭解平台從網頁版測試到未來App版的最新動態與優化
               </label>
             </div>
-            
+
             {/* Submit Button */}
             <button 
               type="submit" 
@@ -169,7 +169,7 @@ const ActorPlatformPreview = () => {
       </div>
     </div>
   );
-  
+
   // Portfolio Component
   const PortfolioComponent = () => (
     <main className="container mx-auto p-4 flex-grow">
@@ -194,7 +194,7 @@ const ActorPlatformPreview = () => {
           預覽成果
         </button>
       </div>
-      
+
       {/* Content sections */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-8">
         {/* Photo upload section */}
@@ -215,7 +215,7 @@ const ActorPlatformPreview = () => {
                   <img src={placeholderCloseup} alt="特寫照片預覽" className="object-cover rounded-md w-full h-48" />
                 </div>
               </div>
-              
+
               {/* Full body photo */}
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
                 <h3 className="text-xl font-bold text-blue-500 mb-2">全身照片</h3>
@@ -229,7 +229,7 @@ const ActorPlatformPreview = () => {
                   <img src={placeholderFullbody} alt="全身照片預覽" className="object-cover rounded-md w-full h-48" />
                 </div>
               </div>
-              
+
               {/* Half body photo */}
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
                 <h3 className="text-xl font-bold text-blue-500 mb-2">半身照片</h3>
@@ -246,7 +246,7 @@ const ActorPlatformPreview = () => {
             </div>
           </div>
         )}
-        
+
         {/* Personal info section */}
         {activeTab === 'info' && (
           <div>
@@ -262,7 +262,7 @@ const ActorPlatformPreview = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label className="block text-gray-700 font-medium mb-2">年齡：</label>
                 <input 
@@ -273,7 +273,7 @@ const ActorPlatformPreview = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label className="block text-gray-700 font-medium mb-2">身高 (cm)：</label>
                 <input 
@@ -284,7 +284,7 @@ const ActorPlatformPreview = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label className="block text-gray-700 font-medium mb-2">體重 (kg)：</label>
                 <input 
@@ -295,7 +295,7 @@ const ActorPlatformPreview = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label className="block text-gray-700 font-medium mb-2">電話：</label>
                 <input 
@@ -306,7 +306,7 @@ const ActorPlatformPreview = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              
+
               <div className="form-group">
                 <label className="block text-gray-700 font-medium mb-2">居住地區：</label>
                 <input 
@@ -318,7 +318,7 @@ const ActorPlatformPreview = () => {
                 />
               </div>
             </div>
-            
+
             <button 
               className="w-full bg-slate-800 hover:bg-slate-900 text-white py-3 px-4 rounded-md mt-8 font-medium text-lg"
               onClick={() => setActiveTab('preview')}
@@ -327,19 +327,19 @@ const ActorPlatformPreview = () => {
             </button>
           </div>
         )}
-        
+
         {/* Preview section */}
         {activeTab === 'preview' && (
           <div>
             <h2 className="text-2xl font-bold mb-4 pb-2 border-b border-gray-200 text-slate-700">預覽成果</h2>
-            
+
             <div className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-lg mb-8">
               <div className="flex justify-end p-4">
                 <button className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md">
                   下載組圖
                 </button>
               </div>
-              
+
               <div className="grid grid-cols-2 grid-rows-2">
                 <div className="aspect-w-4 aspect-h-5.5 w-full">
                   <img src={placeholderCloseup} alt="特寫照片" className="object-cover w-full h-full" />
@@ -350,7 +350,7 @@ const ActorPlatformPreview = () => {
                 <div className="aspect-w-4 aspect-h-5.5 w-full">
                   <img src={placeholderHalfbody} alt="半身照片" className="object-cover w-full h-full" />
                 </div>
-                
+
                 <div className="bg-gray-500 text-white p-6">
                   <ul className="space-y-4">
                     <li>• 姓名：{personalInfo.name || "未填寫"}</li>
@@ -360,6 +360,7 @@ const ActorPlatformPreview = () => {
                     <li>• 電話：{personalInfo.phone || "未填寫"}</li>
                     <li>• 居住地：{personalInfo.location || "未填寫"}</li>
                   </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -367,28 +368,21 @@ const ActorPlatformPreview = () => {
       </div>
     </main>
   );
-  
+
+  // Main component rendering
   return (
-    <div className="flex flex-col min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-slate-800 text-white py-6">
-        <div className="container mx-auto text-center px-4">
-          <h1 className="text-3xl font-bold mb-2">演員組圖製作平台</h1>
-          <p className="text-gray-300">快速製作演員組圖，提升試鏡機會</p>
+    <div className="flex flex-col min-h-screen bg-slate-100">
+      <header className="bg-white shadow-sm py-4">
+        <div className="container mx-auto px-4">
+          <h1 className="text-2xl font-bold text-slate-800">演員組圖製作平台</h1>
         </div>
       </header>
-      
-      {/* Main content */}
-      {currentPage === 'registration' ? (
-        <RegistrationComponent />
-      ) : (
-        <PortfolioComponent />
-      )}
-      
-      {/* Footer */}
-      <footer className="bg-slate-800 text-white py-4 text-center">
-        <div className="container mx-auto">
-          <p>演員組圖製作平台 © 2025 版權所有 by Alex Wang</p>
+
+      {currentPage === 'registration' ? <RegistrationComponent /> : <PortfolioComponent />}
+
+      <footer className="bg-slate-800 text-white py-6 mt-auto">
+        <div className="container mx-auto px-4">
+          <p className="text-center">© 2023 演員組圖製作平台 - 版權所有</p>
         </div>
       </footer>
     </div>
