@@ -21,13 +21,13 @@ import { getFirestore } from "firebase/firestore";
 const firebaseConfig = typeof __firebase_config !== 'undefined' && Object.keys(JSON.parse(__firebase_config)).length > 0
   ? JSON.parse(__firebase_config)
   : {
-  apiKey: "AIzaSyDyUIu1reBIGE0BuHXb5aZdtNH0MEOWrgo",
-  authDomain: "star-photo-collage.firebaseapp.com",
-  projectId: "star-photo-collage",
-  storageBucket: "star-photo-collage.firebasestorage.app",
-  messagingSenderId: "735736806238",
-  appId: "1:735736806238:web:f26bc5ec34b969d2956dcf",
-  measurementId: "G-4DXFHZ914S"
+  apiKey: "xxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  authDomain: "xxxxxxxxxxxxxxxxxxxxxxxx.firebaseapp.com",
+  projectId: "xxxxxxxxxxxxxxxxxxxxxx",
+  storageBucket: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  messagingSenderId: "xxxxxxxxxxxxxxxxx",
+  appId: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  measurementId: "xxxxxxxxxxxxxxxxxx"
 };
 
 // 初始化 Firebase
