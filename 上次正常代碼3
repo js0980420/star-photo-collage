@@ -1,0 +1,1635 @@
+// 引入 React Hooks 和 Firebase Authentication 相關函式
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from 'firebase/auth';
+// 引入 Firebase Storage 相關函式
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// 引入 Firebase Firestore 相關函式
+import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, getDoc, addDoc } from 'firebase/firestore';
+
+// 引入在 index.js 中導出的 auth, storage, db 實例
+import { auth, storage, db } from './index';
+
+// 定義最終 Canvas 的固定尺寸，所有內部元素的座標和大小都將基於此
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+
+// 預設版位的寬高 (Canvas 像素) - 調整為直向比例，以適應 2x2 版型
+const DEFAULT_SLOT_WIDTH = 225; // 800 / 2 = 400; 300 * (3/4) = 225 (for 3:4 aspect ratio)
+const DEFAULT_SLOT_HEIGHT = 300; // 600 / 2 = 300
+
+// 獲取應用程式 ID (來自 Canvas 環境變數)
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// 初始預設圖片版位的配置 (硬編碼的原始預設)
+const getOriginalDefaultImages = () => ([
+  { id: 'fixed-closeup', type: 'fixed', title: '特寫照片', currentUrl: "https://placehold.co/400x550/cccccc/333333?text=點擊上傳圖片", file: null, x: 0, y: 0, slotWidth: DEFAULT_SLOT_WIDTH, slotHeight: DEFAULT_SLOT_HEIGHT, isDragging: false, isResizing: false },
+  { id: 'fixed-fullbody', type: 'fixed', title: '全身照片', currentUrl: "https://placehold.co/400x550/cccccc/333333?text=點擊上傳圖片", file: null, x: DEFAULT_SLOT_WIDTH, y: 0, slotWidth: DEFAULT_SLOT_WIDTH, slotHeight: DEFAULT_SLOT_HEIGHT, isDragging: false, isResizing: false },
+  { id: 'fixed-halfbody', type: 'fixed', title: '半身照片', currentUrl: "https://placehold.co/400x550/cccccc/333333?text=點擊上傳圖片", file: null, x: 0, y: DEFAULT_SLOT_HEIGHT, slotWidth: DEFAULT_SLOT_WIDTH, slotHeight: DEFAULT_SLOT_HEIGHT, isDragging: false, isResizing: false },
+  { id: 'fixed-pose', type: 'fixed', title: '自訂照片', currentUrl: "https://placehold.co/400x550/cccccc/333333?text=點擊上傳圖片", file: null, x: DEFAULT_SLOT_WIDTH, y: DEFAULT_SLOT_HEIGHT, slotWidth: DEFAULT_SLOT_WIDTH, slotHeight: DEFAULT_SLOT_HEIGHT, isDragging: false, isResizing: false },
+]);
+
+// 獲取一個新的自訂圖片版位配置
+const getNewCustomImageSlot = () => ({
+  id: `custom-${Date.now()}`, type: 'custom', title: '自訂照片', currentUrl: "https://placehold.co/400x550/cccccc/333333?text=點擊上傳圖片", file: null,
+  x: CANVAS_WIDTH / 2 - DEFAULT_SLOT_WIDTH / 2, // 居中顯示
+  y: CANVAS_HEIGHT / 2 - DEFAULT_SLOT_HEIGHT / 2, // 居中顯示
+  slotWidth: DEFAULT_SLOT_WIDTH, slotHeight: DEFAULT_SLOT_HEIGHT, isDragging: false, isResizing: false
+});
+
+// 主要的應用程式元件
+const ActorPlatformPreview = () => {
+  // 添加一個版本識別，用於調試
+  console.log("ActorPlatformPreview.js loaded - Version: 20250523.27 (Default slot size adjusted to portrait, added 4th fixed slot)");
+
+  const [currentPage, setCurrentPage] = useState('loading');
+  const [user, setUser] = useState(null);
+  const [authError, setAuthError] = useState(null);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [newsletter, setNewsletter] = useState(true);
+
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+
+  // 圖片版位狀態：包含圖片URL、位置、縮放、平移等
+  const [uploadedImages, setUploadedImages] = useState(() => [...getOriginalDefaultImages()]); // Initial state now uses all 4 fixed slots
+  // 自由文字元素狀態 (已移除相關功能，但狀態保留以防未來擴展)
+  // const [freeTextElements, setFreeTextElements] = useState([]);
+  // const [selectedTextElementId, setSelectedTextElementId] = useState(null);
+
+  // 背景圖片URL狀態
+  const [backgroundUrl, setBackgroundUrl] = useState('');
+  // 版型模式：'default' (固定四格) 或 'custom' (自由移動)
+  const [layoutMode, setLayoutMode] = useState('default');
+
+  // 儲存的設計列表 (已移除相關功能，但狀態保留以防未來擴展)
+  // const [savedCollages, setSavedCollages] = useState([]);
+  // const [selectedSavedCollage, setSelectedSavedCollage] = useState('');
+  // const [newCollageName, setNewCollageName] = useState('');
+
+  // 用於圖片版位整體拖曳的狀態 (Custom Mode)
+  const currentSlotIndexForDrag = useRef(null);
+  const startSlotDragMouseX = useRef(0);
+  const startSlotDragMouseY = useRef(0);
+
+  // 用於圖片版位縮放的狀態 (Custom Mode)
+  const currentSlotIndexForResize = useRef(null);
+  const startResizeMouseX = useRef(0);
+  const startResizeMouseY = useRef(0);
+  // 新增：儲存開始縮放時的 Canvas 尺寸
+  const startResizeCanvasWidth = useRef(0);
+  const startResizeCanvasHeight = useRef(0);
+
+  // 用於文字元素平移的狀態 (已移除相關功能)
+  // const isTextDragging = useRef(false);
+  // const startTextDragX = useRef(0);
+  // const startTextDragY = useRef(0);
+  // const currentTextElementIdForDrag = useRef(null);
+
+  // HTML5 Drag and Drop 狀態 (Default Mode)
+  const [draggedImageId, setDraggedImageId] = useState(null);
+  const [hoveredImageId, setHoveredImageId] = useState(null);
+
+  // 預覽組圖模態視窗的狀態
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewImageSrc, setPreviewImageSrc] = useState('');
+
+  // 自訂確認模態視窗的狀態
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState('');
+  const [confirmAction, setConfirmAction] = useState(() => () => {}); // 儲存點擊確認後要執行的動作
+
+  // 獲取組圖編輯區域的 DOM 元素，用於計算 UI 座標到 Canvas 座標的比例
+  const collageEditorRef = useRef(null);
+  // 用於儲存每個圖片版位對應的檔案輸入元素引用
+  const imageInputRefs = useRef({});
+
+  // Firestore collection reference for collages (已移除相關功能)
+  // const getCollagesCollectionRef = (userId) => {
+  //   if (!db || !userId) return null;
+  //   return collection(db, `artifacts/${appId}/users/${userId}/collages`);
+  // };
+
+  // Firestore collection reference for uploaded photos metadata
+  const getUploadedPhotosCollectionRef = (userId) => {
+    if (!db || !userId) return null;
+    // 將用戶上傳的照片儲存在每個用戶的子集合中
+    return collection(db, `artifacts/${appId}/users/${userId}/uploaded_photos`);
+  };
+
+  // 新增：監聽 currentPage 狀態變化，用於調試
+  useEffect(() => {
+    console.log("Current Page State Changed To:", currentPage);
+  }, [currentPage]);
+
+  // 使用 useEffect 監聽 Firebase 認證狀態變化並載入資料
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("onAuthStateChanged triggered. firebaseUser UID:", firebaseUser ? firebaseUser.uid : "null"); // 更明確的日誌
+
+      setUser(firebaseUser); // 總是更新 user 狀態
+
+      if (firebaseUser) {
+        console.log("使用者已登入:", firebaseUser.uid);
+        setAuthError(null); // 清除之前的認證錯誤
+
+        try {
+          // await loadSavedCollages(firebaseUser.uid); // 載入所有儲存的設計 (已移除)
+          // await loadUserDefaultCollage(firebaseUser.uid); // 載入使用者自訂預設 (已移除)
+          setCurrentPage('portfolio'); // 成功載入資料後再設定頁面
+        } catch (dataLoadError) {
+          console.error("載入使用者資料失敗:", dataLoadError);
+          setAuthError(`載入使用者資料失敗: ${dataLoadError.message || dataLoadError}`);
+          // 即使資料載入失敗，也嘗試進入 portfolio 頁面，但會顯示錯誤訊息
+          setCurrentPage('portfolio');
+          // 確保狀態被重置為一個安全的預設值，以防渲染錯誤
+          resetToOriginalDefault(false);
+        }
+
+      } else {
+        console.log("使用者未登入");
+        setCurrentPage('registration');
+        setAuthError(null);
+        // 重置為原始預設狀態
+        resetToOriginalDefault(false); // 不顯示 alert
+        // setSavedCollages([]); // (已移除)
+        // setSelectedSavedCollage(''); // (已移除)
+        // setNewCollageName(''); // (已移除)
+      }
+    });
+    return () => unsubscribe();
+  }, []); // 保持為空陣列，確保監聽器只在元件掛載時設定一次
+
+  // Firestore 相關函式 (已移除相關功能)
+  // const loadSavedCollages = async (userId) => {
+  //   if (!userId) {
+  //     console.warn("loadSavedCollages: 用戶 ID 未定義，跳過載入。");
+  //     return;
+  //   }
+  //   try {
+  //     const collagesRef = getCollagesCollectionRef(userId);
+  //     if (!collagesRef) {
+  //       console.warn("loadSavedCollages: Firestore 集合引用未定義。");
+  //       return;
+  //     }
+  //     const querySnapshot = await getDocs(collagesRef);
+  //     const loadedCollages = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  //     setSavedCollages(loadedCollages);
+  //     console.log("載入儲存的設計成功:", loadedCollages);
+  //   } catch (error) {
+  //     console.error("載入儲存的設計失敗:", error);
+  //     throw new Error(`載入儲存的設計失敗: ${error.message}`);
+  //   }
+  // };
+
+  // const loadUserDefaultCollage = async (userId) => {
+  //   if (!userId) {
+  //     console.warn("loadUserDefaultCollage: 用戶 ID 未定義，跳過載入。");
+  //     return;
+  //   }
+  //   try {
+  //     const defaultDocRef = doc(getCollagesCollectionRef(userId), 'user_default_collage');
+  //     const docSnap = await getDoc(defaultDocRef);
+  //     if (docSnap.exists()) {
+  //       const data = docSnap.data();
+  //       setUploadedImages(data.uploadedImages || [...getOriginalDefaultImages(), getNewCustomImageSlot()]);
+  //       setFreeTextElements(data.freeTextElements || []);
+  //       setBackgroundUrl(data.backgroundUrl || '');
+  //       setLayoutMode(data.layoutMode || 'default');
+  //       console.log("載入使用者預設設計成功:", data);
+  //     } else {
+  //       console.log("沒有找到使用者預設設計，使用原始預設。");
+  //       resetToOriginalDefault(false);
+  //     }
+  //   } catch (error) {
+  //     console.error("載入使用者預設設計失敗:", error);
+  //     throw new Error(`載入使用者預設設計失敗: ${error.message}`);
+  //   }
+  // };
+
+  // const saveCollage = async () => {
+  //   if (!user || !newCollageName.trim()) {
+  //     setConfirmMessage("請登入並輸入設計名稱。");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //     return;
+  //   }
+  //   try {
+  //     const collagesRef = getCollagesCollectionRef(user.uid);
+  //     if (!collagesRef) return;
+  //     const collageData = {
+  //       name: newCollageName.trim(),
+  //       uploadedImages: uploadedImages,
+  //       freeTextElements: freeTextElements,
+  //       backgroundUrl: backgroundUrl,
+  //       layoutMode: layoutMode,
+  //       timestamp: Date.now()
+  //     };
+  //     await addDoc(collagesRef, collageData);
+  //     setConfirmMessage("設計儲存成功！");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //     setNewCollageName('');
+  //     await loadSavedCollages(user.uid);
+  //   } catch (error) {
+  //     console.error("儲存設計失敗:", error);
+  //     setAuthError(`儲存設計失敗: ${error.message}`);
+  //   }
+  // };
+
+  // const loadSelectedCollage = async () => {
+  //   if (!user || !selectedSavedCollage) {
+  //     setConfirmMessage("請選擇一個要載入的設計。");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //     return;
+  //   }
+  //   try {
+  //     const docRef = doc(getCollagesCollectionRef(user.uid), selectedSavedCollage);
+  //     const docSnap = await getDoc(docRef);
+  //     if (docSnap.exists()) {
+  //       const data = docSnap.data();
+  //       setUploadedImages(data.uploadedImages || [...getOriginalDefaultImages(), getNewCustomImageSlot()]);
+  //       setFreeTextElements(data.freeTextElements || []);
+  //       setBackgroundUrl(data.backgroundUrl || '');
+  //       setLayoutMode(data.layoutMode || 'default');
+  //       setConfirmMessage(`設計 "${data.name}" 載入成功！`);
+  //       setConfirmAction(() => () => setShowConfirmModal(false));
+  //       setShowConfirmModal(true);
+  //     } else {
+  //       setConfirmMessage("找不到該設計。");
+  //       setConfirmAction(() => () => setShowConfirmModal(false));
+  //       setShowConfirmModal(true);
+  //     }
+  //   } catch (error) {
+  //     console.error("載入設計失敗:", error);
+  //     setAuthError(`載入設計失敗: ${error.message}`);
+  //   }
+  // };
+
+  // const deleteSelectedCollage = async () => {
+  //   if (!user || !selectedSavedCollage) {
+  //     setConfirmMessage("請選擇一個要刪除的設計。");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //     return;
+  //   }
+  //   setConfirmMessage("確定要刪除這個設計嗎？");
+  //   setConfirmAction(() => async () => {
+  //     try {
+  //       await deleteDoc(doc(getCollagesCollectionRef(user.uid), selectedSavedCollage));
+  //       setConfirmMessage("設計刪除成功！");
+  //       setConfirmAction(() => () => setShowConfirmModal(false));
+  //       setShowConfirmModal(true);
+  //       setSelectedSavedCollage('');
+  //       await loadSavedCollages(user.uid);
+  //     } catch (error) {
+  //       console.error("刪除設計失敗:", error);
+  //       setAuthError(`刪除設計失敗: ${error.message}`);
+  //     } finally {
+  //       setShowConfirmModal(false);
+  //     }
+  //   });
+  //   setShowConfirmModal(true);
+  // };
+
+  // const setAsNewDefault = async () => {
+  //   if (!user) {
+  //     setConfirmMessage("請登入才能設定預設設計。");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //     return;
+  //   }
+  //   try {
+  //     const defaultDocRef = doc(getCollagesCollectionRef(user.uid), 'user_default_collage');
+  //     const collageData = {
+  //       uploadedImages: uploadedImages,
+  //       freeTextElements: freeTextElements,
+  //       backgroundUrl: backgroundUrl,
+  //       layoutMode: layoutMode,
+  //       timestamp: Date.now()
+  //     };
+  //     await setDoc(defaultDocRef, collageData);
+  //     setConfirmMessage("當前設計已設為您的新預設！");
+  //     setConfirmAction(() => () => setShowConfirmModal(false));
+  //     setShowConfirmModal(true);
+  //   } catch (error) {
+  //     console.error("設定新預設失敗:", error);
+  //     setAuthError(`設定新預設失敗: ${error.message}`);
+  //   }
+  // };
+
+  // 版型模式切換
+  const handleLayoutModeChange = (mode) => {
+    setLayoutMode(mode);
+    if (mode === 'default') {
+      setUploadedImages(prevImages => {
+        const newImages = [];
+        const originalDefaults = getOriginalDefaultImages();
+        let fixedCount = 0;
+
+        // Place fixed slots into their default positions, retaining content if available
+        originalDefaults.forEach(defaultSlot => {
+            const existingImage = prevImages.find(img => img.id === defaultSlot.id);
+            newImages.push({
+                ...(existingImage || defaultSlot), // Use existing content if available
+                x: defaultSlot.x,
+                y: defaultSlot.y,
+                slotWidth: defaultSlot.slotWidth,
+                slotHeight: defaultSlot.slotHeight,
+                isDragging: false, isResizing: false
+            });
+            fixedCount++;
+        });
+
+        // For default mode, we only want the 4 fixed slots initially.
+        // If there were custom slots before, they are removed when switching to default.
+        // If the user adds a custom slot later, it will be appended.
+
+        return newImages;
+      });
+      // setFreeTextElements([]); // 預設模式下清空自由文字 (已移除)
+      setBackgroundUrl(''); // 預設模式下清空背景
+    } else if (mode === 'custom') { // <-- 添加這個 else if 區塊來處理切換到 custom 模式
+        setUploadedImages(prevImages => {
+            const newImages = [];
+            const cols = 2; // 設定為 2 列的網格
+            // Calculate base dimensions for a grid-like arrangement in custom mode
+            const slotBaseWidth = CANVAS_WIDTH / cols;
+            // Ensure height calculation considers all images, including any new custom ones
+            const totalSlots = prevImages.length + (prevImages.filter(img => img.type === 'custom').length === 0 ? 1 : 0);
+            const slotBaseHeight = CANVAS_HEIGHT / Math.ceil(totalSlots / cols);
+
+            prevImages.forEach((image, index) => {
+                const colIndex = index % cols;
+                const rowIndex = Math.floor(index / cols);
+                newImages.push({
+                    ...image,
+                    // 計算新的 Canvas 座標，稍微留白
+                    x: colIndex * slotBaseWidth + 10, // 添加一些左側間距
+                    y: rowIndex * slotBaseHeight + 10, // 添加一些頂部間距
+                    // 設置初始尺寸，可以讓它小於網格單元格，方便操作
+                    slotWidth: slotBaseWidth - 20, // 減去間距
+                    slotHeight: slotBaseHeight - 20, // 減去間距
+                    isDragging: false,
+                    isResizing: false
+                });
+            });
+            // 確保至少有一個自訂版位
+            if (newImages.filter(img => img.type === 'custom').length === 0) {
+                   newImages.push(getNewCustomImageSlot()); // 添加一個新的自訂版位
+            }
+            return newImages;
+        });
+    }
+    // If switching to 'custom', the current state is preserved, and elements become draggable/resizable.
+  };
+
+  // 返回原始固定版型(預設)
+  const resetToOriginalDefault = (showAlert = true) => {
+    setUploadedImages([...getOriginalDefaultImages()]); // Only use fixed slots for original default
+    // setFreeTextElements([]); // (已移除)
+    setBackgroundUrl('');
+    setLayoutMode('default'); // Ensure layout mode is set to default
+    if (showAlert) {
+      setConfirmMessage("已返回原始固定版型(預設)。");
+      setConfirmAction(() => () => setShowConfirmModal(false));
+      setShowConfirmModal(true);
+    }
+  };
+
+  // 處理 Email/密碼 登入或註冊
+  const handleEmailPasswordAuth = async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    const email = emailRef.current.value;
+    const password = passwordRef.current.value;
+
+    if (!email || !password) {
+      setAuthError("請輸入 Email 和密碼");
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (loginError) {
+      if (loginError.code === 'auth/user-not-found') {
+        console.log("使用者不存在，嘗試註冊...");
+        try {
+          await createUserWithEmailAndPassword(auth, email, password);
+          console.log("註冊成功！");
+        } catch (signupError) {
+          console.error("註冊失敗:", signupError);
+          setAuthError(`註冊失敗: ${signupError.message}`);
+        }
+      } else {
+        console.error("登入失敗:", loginError);
+        setAuthError(`登入失敗: ${loginError.message}`);
+      }
+    }
+  };
+
+  // 處理 Google 登入
+  const handleGoogleSignin = async () => {
+      setAuthError(null);
+      try {
+          const provider = new GoogleAuthProvider();
+          // 強制要求使用者選擇帳號，即使只有一個帳號登入
+          provider.setCustomParameters({ prompt: 'select_account' });
+          await signInWithPopup(auth, provider);
+      } catch (error) {
+          console.error("Google 登入失敗:", error);
+          setAuthError(`Google 登入失敗: ${error.message}`);
+      }
+  };
+
+  // 處理登出
+  const handleSignOut = async () => {
+      console.trace("handleSignOut called"); // 新增：追蹤呼叫堆疊
+      try {
+          await signOut(auth);
+          console.log("使用者已登出");
+      } catch (error) {
+          console.error("登出失敗:", error);
+          setAuthError(`登出失敗: ${error.message}`);
+      }
+  };
+
+  // 新增：將用戶上傳的照片元數據儲存到 Firestore
+  const saveUserPhotoMetadata = async (userId, photoUrl, photoId) => {
+    if (!db || !userId) {
+      console.error("Firestore 或用戶 ID 未定義，無法儲存照片元數據。");
+      return;
+    }
+    try {
+      const photosRef = getUploadedPhotosCollectionRef(userId);
+      if (!photosRef) return;
+
+      // 使用 setDoc 而不是 addDoc，這樣如果 photoId 相同會覆蓋，避免重複
+      // 這裡假設 photoId 是唯一的，或者您希望每次上傳同一個版位 ID 的圖片都覆蓋
+      await setDoc(doc(photosRef, photoId), {
+        userId: userId, // 儲存用戶的 UID
+        photoUrl: photoUrl,
+        uploadedAt: Date.now(),
+        slotId: photoId, // 儲存版位的 ID
+        // 您可以選擇儲存用戶的 email，但通常建議使用 UID 來關聯數據
+        // userEmail: user.email || null, // 如果需要，可以取消註釋這行
+      });
+      console.log(`照片元數據儲存成功: 用戶 ${userId}, 版位 ${photoId}`);
+    } catch (error) {
+      console.error("儲存照片元數據失敗:", error);
+    }
+  };
+
+
+  // 處理文件上傳到 Firebase Storage
+  const handleFileUpload = async (file, index) => {
+    if (!file || !user) {
+      setAuthError("請先登入才能上傳照片。");
+      return;
+    }
+
+    // 顯示本地預覽
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImages(prevImages => {
+        const newImages = [...prevImages];
+        newImages[index] = {
+          ...newImages[index],
+          currentUrl: reader.result,
+          file: file,
+        };
+        return newImages;
+      });
+    };
+    reader.readAsDataURL(file);
+
+    // 上傳到 Firebase Storage
+    const storageRef = ref(storage, `uploads/${user.uid}/${uploadedImages[index].id}-${file.name}`);
+
+    try {
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // 更新狀態為 Storage 上的真實下載 URL
+      setUploadedImages(prevImages => {
+        const newImages = [...prevImages];
+        newImages[index] = { ...newImages[index], currentUrl: downloadURL, file: null };
+        return newImages;
+      });
+      console.log(`文件上傳成功！位置 ${uploadedImages[index].id}:`, downloadURL);
+
+      // 儲存用戶的電子郵件和照片的關聯到 Firestore
+      // 使用 user.uid 作為用戶的唯一識別符
+      await saveUserPhotoMetadata(user.uid, downloadURL, uploadedImages[index].id);
+
+    } catch (error) {
+      console.error(`文件上傳失敗，位置 ${uploadedImages[index].id}:`, error);
+      setAuthError(`文件上傳失敗: ${error.message}`);
+    }
+  };
+
+  // 處理背景圖片上傳
+  const handleBackgroundUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !user) {
+      setAuthError("請先登入才能上傳背景。");
+      return;
+    }
+
+    // 顯示本地預覽
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setBackgroundUrl(reader.result); // 即時更新背景圖片
+    };
+    reader.readAsDataURL(file);
+
+    const storageRef = ref(storage, `backgrounds/${user.uid}/${file.name}`);
+    try {
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      setBackgroundUrl(downloadURL); // 更新為 Storage 上的 URL
+      setConfirmMessage("背景照片上傳成功！");
+      setConfirmAction(() => () => setShowConfirmModal(false));
+      setShowConfirmModal(true);
+    } catch (error) {
+      console.error("背景照片上傳失敗:", error);
+      setAuthError(`背景照片上傳失敗: ${error.message}`);
+    }
+  };
+
+  // 圖片去背功能 (已移除，但保留了函式簽名以防萬一，實際不會被呼叫)
+  // const handleRemoveBackground = (index) => {
+  //   setConfirmMessage("去背功能需要外部服務支援，目前為示範功能。在實際應用中，會將圖片發送到去背API處理。");
+  //   setConfirmAction(() => () => setShowConfirmModal(false));
+  //   setShowConfirmModal(true);
+  // };
+
+  // 圖片版位整體拖曳開始 (Custom Mode)
+  const handleSlotDragStart = (e, index) => {
+    if (e.button !== 0 || layoutMode === 'default') return; // 預設模式下不可拖曳版位
+    e.preventDefault();
+    currentSlotIndexForDrag.current = index;
+
+    const slotRect = e.currentTarget.getBoundingClientRect();
+    startSlotDragMouseX.current = e.clientX - slotRect.left;
+    startSlotDragMouseY.current = e.clientY - slotRect.top;
+
+    setUploadedImages(prevImages => prevImages.map((img, i) =>
+        i === index ? { ...img, isDragging: true } : img
+    ));
+
+    document.addEventListener('mousemove', handleSlotDragMove);
+    document.addEventListener('mouseup', handleSlotDragEnd);
+  };
+
+  // 圖片版位整體拖曳移動 (Custom Mode)
+  const handleSlotDragMove = (e) => {
+    if (currentSlotIndexForDrag.current === null || !collageEditorRef.current) return;
+
+    const index = currentSlotIndexForDrag.current;
+    const editorRect = collageEditorRef.current.getBoundingClientRect();
+
+    let newUiX = e.clientX - editorRect.left - startSlotDragMouseX.current;
+    let newUiY = e.clientY - editorRect.top - startSlotDragMouseY.current;
+
+    const uiToCanvasScaleX = CANVAS_WIDTH / editorRect.width;
+    const uiToCanvasScaleY = CANVAS_HEIGHT / editorRect.height;
+
+    let newCanvasX = newUiX * uiToCanvasScaleX;
+    let newCanvasY = newUiY * uiToCanvasScaleY;
+
+    // 限制版位在編輯區域內
+    newCanvasX = Math.max(0, Math.min(newCanvasX, CANVAS_WIDTH - uploadedImages[index].slotWidth));
+    newCanvasY = Math.max(0, Math.min(newCanvasY, CANVAS_HEIGHT - uploadedImages[index].slotHeight));
+
+    setUploadedImages(prevImages => {
+        const newImages = [...prevImages];
+        newImages[index] = { ...newImages[index], x: newCanvasX, y: newCanvasY };
+        return newImages;
+    });
+  };
+
+  // 圖片版位整體拖曳結束 (Custom Mode)
+  const handleSlotDragEnd = () => {
+    setUploadedImages(prevImages => prevImages.map((img, i) =>
+        i === currentSlotIndexForDrag.current ? { ...img, isDragging: false } : img
+    ));
+    currentSlotIndexForDrag.current = null;
+    document.removeEventListener('mousemove', handleSlotDragMove);
+    document.removeEventListener('mouseup', handleSlotDragEnd);
+  };
+
+  // 圖片版位縮放開始 (Custom Mode)
+  const handleResizeStart = (e, index) => {
+    if (e.button !== 0 || layoutMode === 'default') return; // 預設模式下不可縮放版位
+    e.stopPropagation(); // 阻止觸發版位拖曳
+    currentSlotIndexForResize.current = index;
+
+    // 儲存滑鼠起始位置 (UI 像素)
+    startResizeMouseX.current = e.clientX;
+    startResizeMouseY.current = e.clientY;
+
+    // 儲存開始縮放時的 Canvas 尺寸
+    startResizeCanvasWidth.current = uploadedImages[index].slotWidth;
+    startResizeCanvasHeight.current = uploadedImages[index].slotHeight;
+
+    setUploadedImages(prevImages => prevImages.map((img, i) =>
+        i === index ? { ...img, isResizing: true } : img
+    ));
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  };
+
+  // 圖片版位縮放移動 (Custom Mode)
+  const handleResizeMove = (e) => {
+    if (currentSlotIndexForResize.current === null || !collageEditorRef.current) return;
+
+    const index = currentSlotIndexForResize.current;
+    const editorRect = collageEditorRef.current.getBoundingClientRect();
+
+    // 計算滑鼠在 UI 上的移動量 (UI 像素)
+    const deltaX = e.clientX - startResizeMouseX.current;
+    const deltaY = e.clientY - startResizeMouseY.current;
+
+    // 計算 UI 像素到 Canvas 像素的比例
+    const uiToCanvasScaleX = CANVAS_WIDTH / editorRect.width;
+    const uiToCanvasScaleY = CANVAS_HEIGHT / editorRect.height;
+
+    // 將 UI 上的移動量轉換為 Canvas 上的移動量
+    const canvasDeltaX = deltaX * uiToCanvasScaleX;
+    const canvasDeltaY = deltaY * uiToCanvasScaleY;
+
+    // 計算新的 Canvas 尺寸
+    let newCanvasWidth = startResizeCanvasWidth.current + canvasDeltaX;
+    let newCanvasHeight = startResizeCanvasHeight.current + canvasDeltaY;
+
+    // 最小尺寸限制 (Canvas 像素)
+    const minCanvasSize = 50; // 保持 50 像素的 Canvas 最小尺寸
+    newCanvasWidth = Math.max(minCanvasSize, newCanvasWidth);
+    newCanvasHeight = Math.max(minCanvasSize, newCanvasHeight);
+
+    // 限制版位在編輯區域內 (確保不會超出右側和底部)
+    const currentSlot = uploadedImages[index];
+    newCanvasWidth = Math.min(newCanvasWidth, CANVAS_WIDTH - currentSlot.x);
+    newCanvasHeight = Math.min(newCanvasHeight, CANVAS_HEIGHT - currentSlot.y);
+
+    setUploadedImages(prevImages => {
+        const newImages = [...prevImages];
+        newImages[index] = { ...newImages[index], slotWidth: newCanvasWidth, slotHeight: newCanvasHeight };
+        return newImages;
+    });
+  };
+
+  // 圖片版位縮放結束 (Custom Mode)
+  const handleResizeEnd = () => {
+    setUploadedImages(prevImages => prevImages.map((img, i) =>
+        i === currentSlotIndexForResize.current ? { ...img, isResizing: false } : img
+    ));
+    currentSlotIndexForResize.current = null;
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
+  };
+
+  // HTML5 Drag and Drop handlers (Default Mode)
+  const handleDefaultDragStart = (e, id) => {
+    if (layoutMode !== 'default') return;
+    setDraggedImageId(id);
+    e.dataTransfer.setData('text/plain', id); // Set data for drag operation
+    // Add a class to the dragged element for visual feedback (e.g., opacity)
+    e.currentTarget.classList.add('opacity-50');
+  };
+
+  const handleDefaultDragOver = (e, id) => {
+    if (layoutMode !== 'default' || !draggedImageId || draggedImageId === id) return;
+    e.preventDefault(); // Necessary to allow dropping
+    if (hoveredImageId !== id) {
+      setHoveredImageId(id);
+    }
+  };
+
+  const handleDefaultDragLeave = (e, id) => {
+    if (layoutMode !== 'default') return;
+    if (hoveredImageId === id) {
+      setHoveredImageId(null);
+    }
+  };
+
+  const handleDefaultDrop = (e, targetId) => {
+    if (layoutMode !== 'default' || !draggedImageId || draggedImageId === targetId) return;
+    e.preventDefault();
+
+    const newUploadedImages = [...uploadedImages];
+    const draggedIndex = newUploadedImages.findIndex(img => img.id === draggedImageId);
+    const targetIndex = newUploadedImages.findIndex(img => img.id === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      console.error("Dragged or target image not found.");
+      return;
+    }
+
+    // Perform the reordering
+    const [draggedItem] = newUploadedImages.splice(draggedIndex, 1);
+    newUploadedImages.splice(targetIndex, 0, draggedItem);
+
+    setUploadedImages(newUploadedImages);
+    setDraggedImageId(null);
+    setHoveredImageId(null);
+  };
+
+  const handleDefaultDragEnd = (e) => {
+    if (layoutMode !== 'default') return;
+    // Remove the opacity class from the dragged element
+    e.currentTarget.classList.remove('opacity-50');
+    setDraggedImageId(null);
+    setHoveredImageId(null);
+  };
+
+
+  // 新增照片版位
+  const addPhotoSlot = () => {
+    setUploadedImages(prevImages => [
+      ...prevImages,
+      getNewCustomImageSlot() // 添加一個新的自訂版位
+    ]);
+  };
+
+  // 刪除照片版位
+  const deletePhotoSlot = (idToDelete) => {
+    setUploadedImages(prevImages => {
+      const imageToDelete = prevImages.find(img => img.id === idToDelete);
+      if (!imageToDelete) return prevImages; // Should not happen, but for safety
+
+      // Always prevent deletion of fixed slots
+      if (imageToDelete.type === 'fixed') {
+        setConfirmMessage("預設照片版位不能被刪除。");
+        setConfirmAction(() => () => setShowConfirmModal(false));
+        setShowConfirmModal(true);
+        return prevImages;
+      }
+
+      // If in default mode, prevent deletion if it's the last custom slot
+      if (layoutMode === 'default' && imageToDelete.type === 'custom') {
+        const customSlotsCount = prevImages.filter(img => img.type === 'custom').length;
+        // In default mode, we start with 4 fixed slots. If a custom slot is added,
+        // we should allow deleting it. The minimum for default mode is the 4 fixed slots.
+        // So, if the remaining images are only the 4 fixed ones, prevent deletion of another fixed or the last custom.
+        const remainingImages = prevImages.filter(img => img.id !== idToDelete);
+        const fixedSlotsCount = remainingImages.filter(img => img.type === 'fixed').length;
+        const customSlotsRemaining = remainingImages.filter(img => img.type === 'custom').length;
+
+        if (fixedSlotsCount === 4 && customSlotsRemaining === 0) {
+             setConfirmMessage("固定版型(預設)下，至少需要保留四個預設照片版位。");
+             setConfirmAction(() => () => setShowConfirmModal(false));
+             setShowConfirmModal(true);
+             return prevImages;
+        }
+      }
+
+      // General check: ensure at least one slot remains if all fixed slots are gone
+      // This logic is mostly for custom mode, where fixed slots can be deleted if they are not the only ones left.
+      // But in this app, fixed slots are explicitly protected.
+      const remainingImages = prevImages.filter(img => img.id !== idToDelete);
+      if (remainingImages.length < 1) { // If deleting this would leave no slots at all
+          setConfirmMessage("至少需要保留一張照片版位。");
+          setConfirmAction(() => () => setShowConfirmModal(false));
+          setShowConfirmModal(true);
+          return prevImages;
+      }
+      return remainingImages;
+    });
+  };
+
+  // 新增文字元素 (已移除相關功能)
+  // const addTextElement = () => {
+  //   const newTextId = `text-${Date.now()}`;
+  //   setFreeTextElements(prevTexts => [
+  //     ...prevTexts,
+  //     {
+  //       id: newTextId,
+  //       x: 50,
+  //       y: 50,
+  //       content: '點擊編輯文字',
+  //       fontSize: 24,
+  //       color: '#000000',
+  //       isEditing: false
+  //     }
+  //   ]);
+  //   setSelectedTextElementId(newTextId);
+  // };
+
+  // 處理文字內容變化 (已移除相關功能)
+  // const handleFreeTextContentChange = (id, newContent) => {
+  //   setFreeTextElements(prevTexts =>
+  //     prevTexts.map(text =>
+  //       text.id === id ? { ...text, content: newContent } : text
+  //     )
+  //   );
+  // };
+
+  // 處理文字字體大小變化 (已移除相關功能)
+  // const handleFreeTextFontSizeChange = (id, newSize) => {
+  //   setFreeTextElements(prevTexts =>
+  //     prevTexts.map(text =>
+  //       text.id === id ? { ...text, fontSize: newSize } : text
+  //     )
+  //   );
+  // };
+
+  // 處理文字顏色變化 (已移除相關功能)
+  // const handleFreeTextColorChange = (id, newColor) => {
+  //   setFreeTextElements(prevTexts =>
+  //     prevTexts.map(text =>
+  //       text.id === id ? { ...text, color: newColor } : text
+  //     )
+  //   );
+  // };
+
+  // 點擊文字元素時選中它並進入編輯模式 (已移除相關功能)
+  // const selectTextElement = (id) => {
+  //   setSelectedTextElementId(id);
+  //   setFreeTextElements(prevTexts =>
+  //     prevTexts.map(text =>
+  //       text.id === id ? { ...text, isEditing: true } : { ...text, isEditing: false }
+  //     )
+  //   );
+  // };
+
+  // 點擊其他地方時退出文字編輯模式 (已移除相關功能)
+  // const handleOutsideClick = (e) => {
+  //   if (!e.target.closest('.free-text-element') && !e.target.closest('.text-controls')) {
+  //     setFreeTextElements(prevTexts =>
+  //       prevTexts.map(text => ({ ...text, isEditing: false }))
+  //     );
+  //   }
+  // };
+
+  // useEffect(() => { // (已移除相關功能)
+  //   document.addEventListener('mousedown', handleOutsideClick);
+  //   return () => {
+  //     document.removeEventListener('mousedown', handleOutsideClick);
+  //   };
+  // }, []);
+
+  // 文字元素拖曳開始 (已移除相關功能)
+  // const handleTextDragStart = (e, id) => {
+  //   if (e.button !== 0) return;
+  //   e.preventDefault();
+  //   isTextDragging.current = true;
+  //   currentTextElementIdForDrag.current = id;
+
+  //   const textElem = freeTextElements.find(t => t.id === id);
+  //   if (!textElem) return;
+
+  //   const textRect = e.currentTarget.getBoundingClientRect();
+  //   startTextDragX.current = e.clientX - textRect.left;
+  //   startTextDragY.current = e.clientY - textRect.top;
+
+  //   e.currentTarget.classList.add('text-dragging');
+
+  //   document.addEventListener('mousemove', handleTextDragMove);
+  //   document.addEventListener('mouseup', handleTextDragEnd);
+  // };
+
+  // 文字元素拖曳移動 (已移除相關功能)
+  // const handleTextDragMove = (e) => {
+  //   if (!isTextDragging.current || currentTextElementIdForDrag.current === null || !collageEditorRef.current) return;
+
+  //   const id = currentTextElementIdForDrag.current;
+  //   const collageContainer = collageEditorRef.current;
+  //   const containerRect = collageContainer.getBoundingClientRect();
+
+  //   let newX = e.clientX - containerRect.left - startTextDragX.current;
+  //   let newY = e.clientY - containerRect.top - startTextDragY.current;
+
+  //   newX = Math.max(0, Math.min(newX, containerRect.width - e.currentTarget.offsetWidth));
+  //   newY = Math.max(0, Math.min(newY, containerRect.offsetHeight)); // Changed from offsetHeight to containerRect.height to prevent text from going outside the container
+
+  //   setFreeTextElements(prevTexts =>
+  //     prevTexts.map(text =>
+  //       text.id === id ? { ...text, x: newX, y: newY } : text
+  //     )
+  //   );
+  // };
+
+  // 文字元素拖曳結束 (已移除相關功能)
+  // const handleTextDragEnd = (e) => {
+  //   isTextDragging.current = false;
+  //   currentTextElementIdForDrag.current = null;
+  //   if (e.currentTarget) {
+  //     e.currentTarget.classList.remove('text-dragging');
+  //   }
+  //   document.removeEventListener('mousemove', handleTextDragMove);
+  //   document.removeEventListener('mouseup', handleTextDragEnd);
+  // };
+
+  // 刪除文字元素 (已移除相關功能)
+  // const deleteTextElement = (id) => {
+  //   setFreeTextElements(prevTexts => prevTexts.filter(text => text.id !== id));
+  //   if (selectedTextElementId === id) {
+  //     setSelectedTextElementId(null);
+  //   }
+  // };
+
+  
+  
+  // 生成組圖並顯示預覽
+  // 為了讓4格照片剛好填滿canvas（避免右側空白），
+  // 這裡動態調整canvas尺寸與slot位置，讓2x2格子完全貼齊
+  const openCollagePreview = async () => {
+    // 設定為正方形canvas，並讓4格剛好填滿
+    // 根據預覽圖的需求，固定為 2x2 的 640x640 尺寸
+    const PREVIEW_CANVAS_WIDTH = 640;
+    const GRID_COLS = 2;
+    const GRID_ROWS = 2;
+    const SLOT_W = 320;
+    const SLOT_H = 320;
+    const CANVAS_W = SLOT_W * GRID_COLS;
+    const CANVAS_H = SLOT_H * GRID_ROWS;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = CANVAS_W;
+    canvas.height = CANVAS_H;
+
+    // 載入背景圖片
+    let loadedBgImg = null;
+    if (backgroundUrl) {
+      try {
+        loadedBgImg = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.src = backgroundUrl;
+          img.onload = () => resolve(img);
+          img.onerror = (e) => {
+            console.error("背景圖片載入失敗:", backgroundUrl, e);
+            resolve(null);
+          };
+        });
+      } catch (error) {
+        console.error("背景圖片載入失敗 (Promise catch):", error);
+        loadedBgImg = null;
+      }
+    }
+
+    // 繪製背景
+    if (loadedBgImg) {
+      ctx.drawImage(loadedBgImg, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    } else {
+      const gradient = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      gradient.addColorStop(0, '#f0f2f5');
+      gradient.addColorStop(1, '#e0e2e5');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    // 獲取編輯區域的實際尺寸，用於計算 UI 座標到 Canvas 座標的比例
+    const editorRect = collageEditorRef.current?.getBoundingClientRect();
+    const uiToCanvasScaleX = editorRect ? CANVAS_WIDTH / editorRect.width : 1;
+    const uiToCanvasScaleY = editorRect ? CANVAS_HEIGHT / editorRect.height : 1;
+
+    // 載入並繪製圖片版位
+    for (const imageObj of uploadedImages) {
+      try {
+        const img = await new Promise((resolve, reject) => {
+          // 如果是佔位符圖片，則不載入實際圖片
+          if (imageObj.currentUrl && imageObj.currentUrl.includes('placehold.co')) {
+            resolve(null);
+            return;
+          }
+          const i = new Image();
+          i.crossOrigin = "Anonymous";
+          i.src = imageObj.currentUrl;
+          i.onload = () => resolve(i);
+          i.onerror = (e) => {
+            console.error("圖片載入失敗:", imageObj.currentUrl, e);
+            resolve(null); // 圖片載入失敗
+          };
+        });
+
+        const canvasSlotX = imageObj.x;
+        const canvasSlotY = imageObj.y;
+        const canvasSlotWidth = imageObj.slotWidth;
+        const canvasSlotHeight = imageObj.slotHeight;
+
+        if (img) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(canvasSlotX, canvasSlotY, canvasSlotWidth, canvasSlotHeight);
+          ctx.clip();
+
+          // 計算圖片在版位內的繪製尺寸和位置以保持原始比例 (object-fit: contain)
+          const imgAspectRatio = img.width / img.height;
+          const slotAspectRatio = canvasSlotWidth / canvasSlotHeight;
+
+          let drawWidth = canvasSlotWidth;
+          let drawHeight = canvasSlotHeight;
+          let drawX = canvasSlotX;
+          let drawY = canvasSlotY;
+
+          if (imgAspectRatio > slotAspectRatio) {
+            // 圖片比版位寬，高度需要縮小以適應
+            drawHeight = canvasSlotWidth / imgAspectRatio;
+            drawY = canvasSlotY + (canvasSlotHeight - drawHeight) / 2; // 垂直居中
+          } else {
+            // 圖片比版位高，寬度需要縮小以適應
+            drawWidth = canvasSlotHeight * imgAspectRatio;
+            drawX = canvasSlotX + (canvasSlotWidth - drawWidth) / 2; // 水平居中
+          }
+
+          ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+          ctx.restore();
+        } else {
+          // 繪製佔位符/錯誤框，當圖片為預設佔位符時
+          ctx.fillStyle = '#e0e0e0'; // 淺灰色背景
+          ctx.fillRect(canvasSlotX, canvasSlotY, canvasSlotWidth, canvasSlotHeight);
+          // 繪製上傳圖示 (簡化版，實際應繪製 SVG)
+          ctx.fillStyle = '#a0a0a0'; // 深灰色圖示
+          ctx.font = 'bold 60px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⬆️', canvasSlotX + canvasSlotWidth / 2, canvasSlotY + canvasSlotHeight / 2 - 20); // 上傳箭頭
+          ctx.font = '20px Arial';
+          ctx.fillText('點擊上傳按鈕', canvasSlotX + canvasSlotWidth / 2, canvasSlotY + canvasSlotHeight / 2 + 30); // 文字提示
+        }
+
+        // 只有在固定版型(預設)模式下才繪製格子線
+        if (layoutMode === 'default') {
+            ctx.strokeStyle = '#d1d5db';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(canvasSlotX, canvasSlotY, canvasSlotWidth, canvasSlotHeight);
+        }
+
+      } catch (error) {
+        console.error("繪製單張圖片失敗:", error);
+      }
+    }
+
+    // 繪製自由文字元素 (已移除相關功能，因此這裡不會有元素被繪製)
+    // freeTextElements.forEach(textElem => {
+    //   const drawX = textElem.x * uiToCanvasScaleX;
+    //   const drawY = textElem.y * uiToCanvasScaleY;
+    //   const drawFontSize = textElem.fontSize * Math.min(uiToCanvasScaleX, uiToCanvasScaleY);
+
+    //   ctx.fillStyle = textElem.color;
+    //   ctx.font = `${drawFontSize}px Arial`;
+    //   ctx.textAlign = 'left';
+    //   ctx.textBaseline = 'top';
+    //   ctx.fillText(textElem.content, drawX, drawY);
+    // });
+
+    setPreviewImageSrc(canvas.toDataURL('image/png'));
+    setShowPreviewModal(true);
+  };
+
+  // 實際執行下載
+  const handleActualDownload = () => {
+    // 關閉預覽模態視窗
+    setShowPreviewModal(false);
+
+    // 移除同意條款的判斷，直接執行下載
+    if (previewImageSrc) {
+      const link = document.createElement('a');
+      link.href = previewImageSrc;
+      link.download = '演員組圖.png';
+      link.click();
+    }
+    setShowConfirmModal(false); // 下載後關閉確認框
+  };
+
+  // 關閉預覽模態視窗
+  const closePreviewModal = () => {
+    setShowPreviewModal(false);
+    setPreviewImageSrc('');
+  };
+
+  // Loading Component
+  if (currentPage === 'loading') {
+      return (
+          <div className="flex flex-col min-h-screen bg-slate-100 items-center justify-center">
+              <p>載入中...</p>
+          </div>
+      );
+  }
+
+  // Registration Component
+  const RegistrationComponent = () => (
+    <div className="container mx-auto p-4 flex-grow flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
+        <h2 className="text-2xl font-bold mb-6 text-center text-slate-700">開始使用</h2>
+
+        {authError && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+            {authError}
+          </div>
+        )}
+
+        <div className="space-y-4 mb-6">
+          <button
+            className="w-full flex items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50 transition-colors"
+            onClick={handleGoogleSignin}
+          >
+            <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+            </svg>
+            使用 Google 註冊 / 登入
+          </button>
+        </div>
+
+        <div className="flex items-center my-4">
+          <hr className="flex-grow border-gray-300" />
+          <span className="px-3 text-gray-500 text-sm">或</span>
+          <hr className="flex-grow border-gray-300" />
+        </div>
+
+        <div className="space-y-4 mb-4">
+          <p className="text-center text-gray-600">使用 Email 登入時，如您尚未註冊，系統將會自動為您建立帳號</p>
+        </div>
+
+        <form onSubmit={handleEmailPasswordAuth}>
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-gray-700 font-medium mb-1">常用信箱</label>
+              <input
+                type="email"
+                id="email"
+                className="w-full py-2 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder=""
+                ref={emailRef}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-gray-700 font-medium mb-1">密碼</label>
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                className="w-full py-2 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder=""
+                ref={passwordRef}
+                autoComplete="current-password"
+                required
+              />
+              <div className="flex justify-between mt-1">
+                <div className="flex items-center">
+                  <input
+                    id="show-password"
+                    type="checkbox"
+                    checked={showPassword}
+                    onChange={() => setShowPassword(!showPassword)}
+                    className="w-4 h-4 border border-gray-300 rounded bg-gray-50 focus:ring-3 focus:ring-blue-300"
+                  />
+                  <label htmlFor="show-password" className="ml-2 text-sm text-gray-600">
+                    顯示密碼
+                  </label>
+                </div>
+                <div>
+                  <a href="#" className="text-sm text-blue-500 hover:underline">未收到驗證信</a>
+                  <span className="text-gray-500 text-sm mx-1">或</span>
+                  <a href="#" className="text-sm text-blue-500 hover:underline">忘記密碼</a>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">目前為網頁版測試階段，註冊後您將優先獲得未來App版本的最新消息</p>
+            </div>
+
+            <div className="flex items-start mt-4">
+              <div className="flex items-center h-5">
+                <input
+                  id="newsletter"
+                  type="checkbox"
+                  checked={newsletter}
+                  onChange={(e) => setNewsletter(e.target.checked)}
+                  className="w-4 h-4 border border-gray-300 rounded bg-gray-50 focus:ring-3 focus:ring-blue-300"
+                />
+              </div>
+              <label htmlFor="newsletter" className="ml-2 text-sm text-gray-600">
+                我願意接收最新的產品更新電子報，瞭解平台從網頁版測試到未來App版的最新動態與優化
+              </label>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-blue-400 hover:bg-blue-500 text-white py-2 px-4 rounded-md transition-colors font-medium"
+            >
+              註冊 / 登入
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  // Main component rendering
+  console.log("Rendering ActorPlatformPreview, currentPage:", currentPage); // 新增：渲染時日誌
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-100">
+      <header className="bg-white shadow-sm py-4">
+        <div className="container mx-auto px-4 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-slate-800">組圖藝廊</h1>
+          {user && (
+              <button
+                 className="text-2xl font-bold text-gray-400 hover:text-red-400 transition-colors whitespace-nowrap"
+                 onClick={handleSignOut}
+              >
+                 登出
+              </button>
+          )}
+        </div>
+      </header>
+
+      {currentPage === 'registration' ? (
+        <RegistrationComponent key="registration-page" />
+      ) : (
+        <div id="portfolio-main-content" className="w-full h-full flex flex-col" key="portfolio-page">
+          <main className="container mx-auto p-4 flex-grow">
+            <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+              {/* 視覺確認：當成功進入組圖製作介面時顯示 */}
+              {/* 成功進入提示訊息 - 顯示用戶已成功登入並進入組圖製作頁面 */}
+              {/*<p className="text-green-600 text-center text-xl font-bold mb-4">
+                您已成功進入組圖製作介面！
+              </p>*/}
+              {/* 主要標題 - 顯示當前頁面的主要功能標題 */}
+              <h2 className="text-2xl font-bold mb-4 pb-2 border-b border-gray-200 text-slate-700">MD卡/演員組圖製作平台</h2>
+
+              {/* 控制區塊 */}
+              <div className="controls-area mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                      <h3 className="text-lg font-bold text-slate-700 whitespace-nowrap">版型模式:</h3>
+                      <div className="flex flex-nowrap gap-2 overflow-x-auto">
+                          <button
+                              className={`px-3 py-2 rounded-md font-medium text-sm whitespace-nowrap ${layoutMode === 'default' ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-700 hover:bg-gray-400'}`}
+                              onClick={() => handleLayoutModeChange('default')}
+                          >
+                              固定版型(預設)
+                          </button>
+                          <button
+                              className={`px-3 py-2 rounded-md font-medium text-sm whitespace-nowrap ${layoutMode === 'custom' ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-700 hover:bg-gray-400'}`}
+                              onClick={() => handleLayoutModeChange('custom')}
+                          >
+                              自訂版型
+                          </button>
+                      </div>
+                      <button
+                          className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-md font-medium text-sm whitespace-nowrap"
+                          onClick={() => resetToOriginalDefault(true)}
+                      >
+                          返回預設
+                      </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                      <h3 className="text-lg font-bold text-slate-700 whitespace-nowrap">照片工具:</h3>
+                      <div className="flex items-center gap-4">
+                          <button
+                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md font-medium text-sm whitespace-nowrap"
+                              onClick={addPhotoSlot}
+                          >
+                              新增照片版位
+                          </button>
+                          {/* <button
+                              className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md font-medium text-sm whitespace-nowrap"
+                              onClick={() => document.getElementById('background-upload').click()}
+                          >
+                              新增背景
+                          </button>
+                          <input
+                              id="background-upload"
+                              type="file"
+                              accept="image/*"
+                              onChange={handleBackgroundUpload}
+                              className="hidden"
+                          /> */}
+                      </div>
+                  </div>
+
+                  {/* 文字工具區塊已移除 */}
+                  {/* 設計管理區塊已移除 */}
+              </div>
+
+              {/* 組圖編輯區域 */}
+              <div
+                   ref={collageEditorRef}
+                   // 根據版型模式動態改變 className
+                   className={`collage-editor-area relative w-full bg-gray-200 rounded-lg overflow-hidden shadow-inner p-4
+                              ${layoutMode === 'default' ? 'grid grid-cols-2 grid-rows-2 gap-0' : 'aspect-w-4 aspect-h-3'}
+                             `}
+                   onMouseMove={(e) => {
+                     // Only handle mouse move for custom mode dragging/resizing
+                     if (layoutMode === 'custom') {
+                       handleSlotDragMove(e);
+                       handleResizeMove(e);
+                     }
+                   }}
+                   onMouseUp={(e) => {
+                     // Only handle mouse up for custom mode dragging/resizing
+                     if (layoutMode === 'custom') {
+                       handleSlotDragEnd(e);
+                       handleResizeEnd(e);
+                     }
+                   }}
+                   onMouseLeave={(e) => {
+                     // Only handle mouse leave for custom mode dragging/resizing
+                     if (layoutMode === 'custom') {
+                       handleSlotDragEnd(e);
+                       handleResizeEnd(e);
+                     }
+                   }}
+                   style={{
+                      backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : 'none',
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                   }}
+              >
+                {/* 在這裡定義 uiScaleX 和 uiScaleY，使其在所有子組件中都可訪問 */}
+                {(() => {
+                  const editorRect = collageEditorRef.current?.getBoundingClientRect();
+                  // 確保 editorRect 存在，否則使用預設值 1
+                  const uiScaleX = editorRect ? editorRect.width / CANVAS_WIDTH : 1;
+                  const uiScaleY = editorRect ? editorRect.height / CANVAS_HEIGHT : 1;
+
+                  return (
+                    <>
+                      {/* 圖片版位 */}
+                      {uploadedImages.map((image, index) => {
+                        // 在 grid 版型下，版位位置由 grid 系統控制，不再使用 absolute 定位
+                        // 但對於 'custom' 模式下的拖曳和縮放，仍需計算相對位置
+                        const uiX = image.x * uiScaleX;
+                        const uiY = image.y * uiScaleY;
+                        const uiWidth = image.slotWidth * uiScaleX;
+                        const uiHeight = image.slotHeight * uiScaleY;
+
+                        // 判斷是否為預設佔位符圖片
+                        const isPlaceholder = image.currentUrl && image.currentUrl.includes('placehold.co');
+
+                        return (
+                          <div
+                            key={image.id}
+                            className={`image-slot border-2 border-dashed rounded-lg text-center transition-colors relative
+                                        flex flex-col items-center justify-center overflow-hidden
+                                        ${layoutMode === 'default' ? 'border-gray-400' : 'border-gray-300'}
+                                        ${layoutMode === 'default' ? 'p-0' : 'p-2'} /* Remove padding for default mode */
+                                        ${layoutMode === 'custom' ? (image.isDragging ? 'dragging-slot' : '') + (image.isResizing ? 'resizing-slot' : '') : ''}
+                                        ${layoutMode === 'default' && draggedImageId === image.id ? 'opacity-50' : ''} /* Visual feedback for dragged item */
+                                        ${layoutMode === 'default' && hoveredImageId === image.id ? 'border-blue-500 bg-blue-100' : ''} /* Visual feedback for hovered item */
+                                        ${layoutMode === 'default' ? 'hover:border-blue-500' : 'hover:border-blue-500'} /* Consistent hover effect */
+                                       `}
+                            // Conditional draggable attribute
+                            draggable={layoutMode === 'default'}
+                            // Conditional event handlers
+                            onMouseDown={(e) => layoutMode === 'custom' && handleSlotDragStart(e, index)}
+                            onDragStart={(e) => handleDefaultDragStart(e, image.id)}
+                            onDragOver={(e) => handleDefaultDragOver(e, image.id)}
+                            onDragLeave={(e) => handleDefaultDragLeave(e, image.id)}
+                            onDrop={(e) => handleDefaultDrop(e, image.id)}
+                            onDragEnd={handleDefaultDragEnd} // This is for the dragged element itself
+                            style={layoutMode === 'custom' ? { // 僅在 custom 模式下應用絕對定位樣式
+                              left: uiX,
+                              top: uiY,
+                              width: uiWidth,
+                              height: uiHeight,
+                              position: 'absolute',
+                              zIndex: image.isDragging || image.isResizing ? 20 : 10,
+                              cursor: image.isDragging ? 'grabbing' : 'grab',
+                              backgroundColor: isPlaceholder ? '#f8f8f8' : 'transparent',
+                            } : { // default 模式下，讓 grid 系統控制大小和位置
+                              backgroundColor: isPlaceholder ? '#f8f8f8' : 'transparent',
+                              width: '100%', // 確保在 grid 版型中填滿單元格
+                              height: '100%',
+                            }}
+                          >
+                            <h3 className="text-base font-bold text-blue-500 mb-1 z-10">
+                              {image.title}
+                            </h3>
+
+                            {/* 圖片預覽或佔位符內容 */}
+                            <div
+                              className="image-preview-container w-full h-full overflow-hidden relative flex items-center justify-center"
+                              style={{ cursor: layoutMode === 'custom' ? 'grab' : (layoutMode === 'default' ? 'grab' : 'auto') }}
+                            >
+                              {isPlaceholder ? (
+                                  <div className="upload-placeholder-content flex flex-col items-center justify-center text-gray-500">
+                                      {/* SVG 上傳圖示 */}
+                                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                                      </svg>
+                                      <p className="text-xs mt-1">點擊上傳按鈕</p>
+                                  </div>
+                              ) : (
+                                  <img
+                                    src={image.currentUrl}
+                                    alt={`${image.id} 預覽`}
+                                    className="object-cover w-full h-full"
+                                  />
+                              )}
+                            </div>
+
+                            {/* 上傳照片按鈕 */}
+                            <div className="flex flex-col sm:flex-row justify-center items-center gap-1 mt-1 z-20">
+                              <button
+                                  className="bg-blue-500 hover:bg-blue-600 text-white py-1 px-2 rounded-md font-bold text-xs"
+                                  onClick={(e) => { e.stopPropagation(); imageInputRefs.current[image.id]?.click(); }} // 點擊按鈕觸發隱藏的 input
+                                  disabled={!user}
+                              >
+                                  上傳照片
+                              </button>
+                              {/* 實際的檔案輸入元素，隱藏起來但可被按鈕觸發 */}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                ref={el => imageInputRefs.current[image.id] = el}
+                                onChange={(e) => handleFileUpload(e.target.files[0], index)}
+                              />
+                            </div>
+
+                            {image.type === 'custom' && (
+                              <button
+                                className="delete-slot-button absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold z-20"
+                                onClick={(e) => { e.stopPropagation(); deletePhotoSlot(image.id); }}
+                                title="刪除照片版位"
+                              >
+                                &times;
+                              </button>
+                            )}
+                            {layoutMode === 'custom' && (
+                                <div
+                                    className="resize-handle"
+                                    onMouseDown={(e) => handleResizeStart(e, index)}
+                                ></div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* 自由文字元素渲染 (已移除相關功能，因此這裡不會有元素被渲染) */}
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* 預覽/下載組圖按鈕 */}
+              <div className="flex justify-center mt-8">
+                <button
+                  className="bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-md font-medium text-lg"
+                  onClick={openCollagePreview}
+                >
+                  預覽/下載組圖
+                </button>
+              </div>
+            </div>
+          </main>
+
+         {/* 新增社群連結圖示區塊 */}
+         <div className="fixed bottom-6 right-6 flex flex-col items-center space-y-4 z-50">
+            {/* Instagram 連結 */}
+            <a
+              href="https://www.instagram.com/shilin_wang/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white hover:bg-gray-100 text-gray-800 p-3 rounded-full shadow-lg transition-colors flex items-center justify-center"
+              title="Instagram - 工程師Alex Wang"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="feather feather-instagram">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                <path d="M16 11.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0z"></path>
+                <line x1="17.5" y1="6.5" x2="17.5" y2="6.5"></line>
+              </svg>
+            </a>
+            {/* LINE 連結 */}
+            <a
+              href="https://line.me/ti/p/@438efvtl"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-green-500 hover:bg-green-600 text-white p-3 rounded-full shadow-lg transition-colors flex items-center justify-center"
+              title="LINE - 艾克斯王數位工作室"
+            >
+              <svg fill="white" width="30" height="30" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" data-name="Layer 1">
+                <path d="M13.78,9.46h0a.38.38,0,0,0-.38.38v1.67L12,9.65a.4.4,0,0,0-.33-.19h0a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38h0a.38.38,0,0,0,.38-.38V11l1.39,1.91,0,0h0a.27.27,0,0,0,.15.11.32.32,0,0,0,.14,0h0A.33.33,0,0,0,14,13l.1-.07h0a.39.39,0,0,0,.11-.27V9.84A.38.38,0,0,0,13.78,9.46ZM9.2,12.27H8.14V9.84a.38.38,0,0,0-.38-.38h0a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38H9.2a.39.39,0,0,0,.39-.38v0A.39.39,0,0,0,9.2,12.27Zm1.11-2.81h0a.39.39,0,0,0-.39.38v2.84a.39.39,0,0,0,.39.38h0a.38.38,0,0,0,.38-.38V9.84A.38.38,0,0,0,10.31,9.46ZM17.91,2H6.09A4.1,4.1,0,0,0,2,6.09V17.91A4.1,4.1,0,0,0,6.09,22H17.91A4.1,4.1,0,0,0,22,17.91V6.09A4.1,4.1,0,0,0,17.91,2Zm.31,12.28a1.55,1.55,0,0,1-.13.17h0a5.5,5.5,0,0,1-.8.8c-2,1.87-5.36,4.11-5.81,3.76s.64-1.76-.53-2a1,1,0,0,1-.25,0h0c-3.44-.48-6-2.89-6-5.78,0-3.25,3.29-5.88,7.34-5.88s7.34,2.63,7.34,5.88A5,5,0,0,1,18.22,14.28ZM16.51,9.47H15a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38h1.48a.38.38,0,0,0,.38-.38v0a.38.38,0,0,0-.38-.38H15.45v-.6h1.06a.39.39,0,0,0,.38-.39v0a.38.38,0,0,0-.38-.38H15.45v-.61h1.06a.38.38,0,0,0,.38-.38v0A.38.38,0,0,0,16.51,9.47Z"/>
+              </svg>
+            </a>
+                </div>
+                </div>
+      )}
+
+  {/* 組圖預覽模態視窗 */}
+  {/* 
+    為什麼照片版位右邊會有空白？
+    這是因為組圖預覽是用 canvas 合成一張圖片（previewImageSrc），
+    而 canvas 的寬高（CANVAS_WIDTH, CANVAS_HEIGHT）通常是固定的（例如 640x640），
+    但實際上只有 4 張照片版位平均分布在這個正方形 canvas 上。
+    如果每張照片的 slot 寬高設計不剛好填滿整個 canvas，或 slot 排列有間距，右側就會出現空白。
+    這不是前端 modal 或 img 樣式的問題，而是 canvas 合成時的尺寸與內容決定的。
+
+    如果你想讓預覽圖「完全沒有右邊空白」，應該在 canvas 合成時調整：
+      1. canvas.width, canvas.height 設為 2:2 格子剛好填滿（例如 640x640，4格各320x320）
+      2. 每個 slot 的 x, y, width, height 剛好對齊，不留間距
+    這段邏輯在 openCollagePreview 這個 function 裡面（大約在 763 行附近），
+    你可以在那裡調整 canvas 尺寸與 slot 位置，讓 4 張照片剛好填滿整個 canvas。
+
+    但如果你直接在這裡用 4 個 div 排版，雖然空格消失，但失去「真實預覽」功能（因為下載的還是 canvas 合成圖）。
+    所以這裡不建議改成 4 格 div，應該維持 <img src={previewImageSrc} />，並在 openCollagePreview 調整 canvas 合成邏輯。
+  */}
+  {showPreviewModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl relative w-full max-w-md my-auto">
+        <div className="modal-header flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-slate-800">組圖預覽</h3>
+          <button
+            className="modal-close-button text-gray-600 hover:text-gray-900"
+            onClick={closePreviewModal}
+            aria-label="關閉預覽"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="modal-body flex flex-col items-center">
+          {previewImageSrc ? (
+            <div className="w-full flex justify-center mb-4">
+              <img
+                src={previewImageSrc}
+                alt="組圖預覽"
+                className="max-w-[320px] w-full aspect-square object-contain bg-gray-100 rounded-md"
+                style={{ backgroundColor: '#f3f4f6' }}
+              />
+            </div>
+          ) : (
+            <p>正在生成預覽...</p>
+          )}
+          <div className="text-area w-full text-center mb-4">
+            <p className="text-gray-700 text-base mb-2">
+              歡迎以此組圖以及履歷傳送到右下方IG或官方賴連結，應徵外拍模特、短影音演員、廣告拍攝...等工作，工作詳情請洽官網。
+            </p>
+            <p className="text-gray-500 text-sm mt-2">
+              組圖不會被工程師看到，尊重隱私可以放心下載，除非你主動應徵工作。
+            </p>
+          </div>
+          <button
+            className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md font-medium"
+            onClick={handleActualDownload}
+          >
+            下載組圖
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+      {/* 自訂確認模態視窗 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"> {/* Changed back to justify-center */}
+          <div className="bg-white p-6 rounded-lg shadow-xl relative max-w-md w-full my-auto"> {/* Removed ml-4 and mr-4 */}
+            <div className="modal-header flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-slate-800">訊息確認</h3>
+              {/* No close button for confirm modal as per previous versions, but added flex for consistency */}
+            </div>
+            <div className="modal-body flex flex-col items-center justify-center">
+              <p className="text-gray-700 text-lg mb-6 text-center">{confirmMessage}</p>
+              <div className="flex gap-4">
+              <button
+                  className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md font-medium"
+                  onClick={confirmAction}
+              >
+                  確定
+              </button>
+                <button
+                  className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-md font-medium"
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  取消
+                </button>
+        </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="bg-slate-800 text-white py-6 mt-auto">
+        <div className="container mx-auto px-4">
+          <div className="mb-4 text-center text-sm">
+            歡迎加入艾克斯王數位工作室的官方LINE，接收未來App版上線通知！<br />
+            我們目前正在招募 <span className="text-yellow-300 font-bold">外拍模特、IG/抖音短劇演員、廣告...等等，以及12位內部測試人員</span>，無需工程背景，只要有意願測試App，<br />
+            都歡迎在 <a href="mailto:js0980420@email.com" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">email</a> 或 <a href="https://line.me/R/ti/p/@438efvtl" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">官方LINE</a> 、<a href="https://www.instagram.com/shilin_wang/" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">IG</a>留下報名意願，並可投遞應徵履歷、MD卡/組圖。<br />
+            有任何問題也歡迎詢問！
+          </div>
+          <p className="text-center">© 2025 艾克斯王數位工作室 - 版權所有</p>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+// 導出 ActorPlatformPreview 元件，以便在 index.js 中使用
+export default ActorPlatformPreview;

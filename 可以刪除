@@ -1,0 +1,5 @@
+{/* 視覺確認：當成功進入組圖製作介面時顯示 */}
+              <p className="text-green-600 text-center text-xl font-bold mb-4">
+                您已成功進入組圖製作介面！
+              </p>
+              <h2 className="text-2xl font-bold mb-4 pb-2 border-b border-gray-200 text-slate-700">演員組圖製作</h2>

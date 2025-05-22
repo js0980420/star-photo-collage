@@ -1,0 +1,111 @@
+O3幫我解決Google帳號註冊登入的問題
+// ... existing code ...
+-// Registration Component
+-const RegistrationComponent = ({ authError }) => (
++// Registration Component
++const RegistrationComponent = ({
++  authError,
++  handleGoogleSignin,
++  handleEmailPasswordAuth,
++  showPassword,
++  setShowPassword,
++  newsletter,
++  setNewsletter,
++  emailRef,
++  passwordRef
++}) => (
+ // ... existing code ...
+-          onClick={handleGoogleSignin}
++          onClick={handleGoogleSignin}
+ // ... existing code ...
+-        <form onSubmit={handleEmailPasswordAuth}>
++        <form onSubmit={handleEmailPasswordAuth}>
+ // ... existing code ...
+-            <input
++            <input
+ // ... existing code ...
+-                  checked={showPassword}
+-                  onChange={() => setShowPassword(!showPassword)}
++                  checked={showPassword}
++                  onChange={() => setShowPassword(!showPassword)}
+ // ... existing code ...
+-                  checked={newsletter}
+-                  onChange={(e) => setNewsletter(e.target.checked)}
++                  checked={newsletter}
++                  onChange={(e) => setNewsletter(e.target.checked)}
+ // ... existing code ...
+-  } else if (currentPage === 'registration') {
+-    return <RegistrationComponent authError={authError} />;
++  } else if (currentPage === 'registration') {
++    return (
++      <RegistrationComponent
++        authError={authError}
++        handleGoogleSignin={handleGoogleSignin}
++        handleEmailPasswordAuth={handleEmailPasswordAuth}
++        showPassword={showPassword}
++        setShowPassword={setShowPassword}
++        newsletter={newsletter}
++        setNewsletter={setNewsletter}
++        emailRef={emailRef}
++        passwordRef={passwordRef}
++      />
++    );
+   } else if (currentPage === 'collage') {
+ // ... existing code ...
+-      {currentPage === 'registration' ? (
+-        <RegistrationComponent authError={authError} />
++      {currentPage === 'registration' ? (
++        <RegistrationComponent
++          authError={authError}
++          handleGoogleSignin={handleGoogleSignin}
++          handleEmailPasswordAuth={handleEmailPasswordAuth}
++          showPassword={showPassword}
++          setShowPassword={setShowPassword}
++          newsletter={newsletter}
++          setNewsletter={setNewsletter}
++          emailRef={emailRef}
++          passwordRef={passwordRef}
++        />
+       ) : (
+ // ... existing code ...
+
+
+// 使用 useEffect 監聽 Firebase 認證狀態變化並載入資料
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setUser(firebaseUser);
+        if (firebaseUser) {
+            console.log("使用者已登入:", firebaseUser);
+            setCurrentPage('portfolio'); // 切換到主頁面
+        } else {
+            console.log("使用者未登入");
+            setCurrentPage('registration'); // 切換到註冊頁面
+        }
+    });
+    return () => unsubscribe(); // 清理監聽器
+  }, []);
+
+
+用GPT成功解決手機網頁橫向滑動的問題，右側會有白色框框擋住我的介面，甚至讓彈出視窗的關閉按鈕看不到
+ html, body {
+  overflow-x: hidden;
+}
+
+{/* 組圖預覽模態視窗 */}
+  {/* 
+    為什麼照片版位右邊會有空白？
+    這是因為組圖預覽是用 canvas 合成一張圖片（previewImageSrc），
+    而 canvas 的寬高（CANVAS_WIDTH, CANVAS_HEIGHT）通常是固定的（例如 640x640），
+    但實際上只有 4 張照片版位平均分布在這個正方形 canvas 上。
+    如果每張照片的 slot 寬高設計不剛好填滿整個 canvas，或 slot 排列有間距，右側就會出現空白。
+    這不是前端 modal 或 img 樣式的問題，而是 canvas 合成時的尺寸與內容決定的。
+
+    如果你想讓預覽圖「完全沒有右邊空白」，應該在 canvas 合成時調整：
+      1. canvas.width, canvas.height 設為 2:2 格子剛好填滿（例如 640x640，4格各320x320）
+      2. 每個 slot 的 x, y, width, height 剛好對齊，不留間距
+    這段邏輯在 openCollagePreview 這個 function 裡面（大約在 763 行附近），
+    你可以在那裡調整 canvas 尺寸與 slot 位置，讓 4 張照片剛好填滿整個 canvas。
+
+    但如果你直接在這裡用 4 個 div 排版，雖然空格消失，但失去「真實預覽」功能（因為下載的還是 canvas 合成圖）。
+    所以這裡不建議改成 4 格 div，應該維持 <img src={previewImageSrc} />，並在 openCollagePreview 調整 canvas 合成邏輯。
+  */}

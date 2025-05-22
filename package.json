@@ -1,6 +1,7 @@
 {
   "name": "star-photo-collage",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -8,10 +9,17 @@
     "eject": "react-scripts eject"
   },
   "dependencies": {
-    "firebase": "^11.7.3"
+    "@stagewise/toolbar-react": "^0.1.2",
+    "firebase": "^11.7.3",
+    "react": "^18.2.0",      
+    "react-dom": "^18.2.0"   
   },
   "devDependencies": {
-    "react-scripts": "^5.0.1"
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.4.38",  
+    "react-scripts": "^5.0.1",
+    "tailwindcss": "^3.4.3",  
+    "@tailwindcss/postcss": "^4.0.0-alpha.1" 
   },
   "browserslist": {
     "production": [

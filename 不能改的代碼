@@ -1,0 +1,121 @@
+ 
+ ActorPlatformPreview的以下代碼和文字內容不可更改
+
+          {/* 新增社群連結圖示區塊 */}
+          <div className="fixed bottom-6 left-6 flex flex-col items-center space-y-4 z-50">
+            {/* Instagram 連結 */}
+            <a
+              href="https://www.instagram.com/shilin_wang/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white hover:bg-gray-100 text-gray-800 p-3 rounded-full shadow-lg transition-colors flex items-center justify-center"
+              title="Instagram - 工程師Alex Wang"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="feather feather-instagram">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                <path d="M16 11.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0z"></path>
+                <line x1="17.5" y1="6.5" x2="17.5" y2="6.5"></line>
+              </svg>
+            </a>
+            {/* LINE 連結 */}
+            <a
+              href="https://line.me/ti/p/@438efvtl"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-green-500 hover:bg-green-600 text-white p-3 rounded-full shadow-lg transition-colors flex items-center justify-center"
+              title="LINE - 艾克斯王數位工作室"
+            >
+              <svg fill="white" width="30" height="30" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" data-name="Layer 1">
+                <path d="M13.78,9.46h0a.38.38,0,0,0-.38.38v1.67L12,9.65a.4.4,0,0,0-.33-.19h0a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38h0a.38.38,0,0,0,.38-.38V11l1.39,1.91,0,0h0a.27.27,0,0,0,.15.11.32.32,0,0,0,.14,0h0A.33.33,0,0,0,14,13l.1-.07h0a.39.39,0,0,0,.11-.27V9.84A.38.38,0,0,0,13.78,9.46ZM9.2,12.27H8.14V9.84a.38.38,0,0,0-.38-.38h0a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38H9.2a.39.39,0,0,0,.39-.38v0A.39.39,0,0,0,9.2,12.27Zm1.11-2.81h0a.39.39,0,0,0-.39.38v2.84a.39.39,0,0,0,.39.38h0a.38.38,0,0,0,.38-.38V9.84A.38.38,0,0,0,10.31,9.46ZM17.91,2H6.09A4.1,4.1,0,0,0,2,6.09V17.91A4.1,4.1,0,0,0,6.09,22H17.91A4.1,4.1,0,0,0,22,17.91V6.09A4.1,4.1,0,0,0,17.91,2Zm.31,12.28a1.55,1.55,0,0,1-.13.17h0a5.5,5.5,0,0,1-.8.8c-2,1.87-5.36,4.11-5.81,3.76s.64-1.76-.53-2a1,1,0,0,1-.25,0h0c-3.44-.48-6-2.89-6-5.78,0-3.25,3.29-5.88,7.34-5.88s7.34,2.63,7.34,5.88A5,5,0,0,1,18.22,14.28ZM16.51,9.47H15a.38.38,0,0,0-.38.38v2.84a.38.38,0,0,0,.38.38h1.48a.38.38,0,0,0,.38-.38v0a.38.38,0,0,0-.38-.38H15.45v-.6h1.06a.39.39,0,0,0,.38-.39v0a.38.38,0,0,0-.38-.38H15.45v-.61h1.06a.38.38,0,0,0,.38-.38v0A.38.38,0,0,0,16.51,9.47Z"/>
+              </svg>
+            </a>
+                </div>
+                </div>
+      )}
+
+      {/* 組圖預覽模態視窗 */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"> {/* Changed back to justify-center */}
+          <div className="bg-white p-6 rounded-lg shadow-xl relative max-w-lg w-full my-auto"> {/* Removed ml-4 and mr-4 */}
+            <div className="modal-header flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-slate-800">組圖預覽</h3>
+              <button
+                className="modal-close-button text-gray-600 hover:text-gray-900"
+                onClick={closePreviewModal}
+              >
+                &times;
+              </button>
+                </div>
+            <div className="modal-body flex flex-col items-center">
+              {previewImageSrc ? (
+                <img src={previewImageSrc} alt="組圖預覽" className="w-full h-auto rounded-md mb-4" />
+              ) : (
+                <p>正在生成預覽...</p>
+              )}
+              <div className="text-area w-full text-center mb-4">
+                <p className="text-gray-700 text-base mb-2">
+                  歡迎以此組圖以及履歷傳送到右下方IG或官方賴連結，應徵外拍模特、短影音演員、廣告拍攝...等工作，工作詳情請洽官網。
+                </p>
+                <p className="text-gray-500 text-sm mt-2">
+                  組圖不會被工程師看到，尊重隱私可以放心下載，除非你主動應徵工作。
+                </p>
+              </div>
+              <button
+                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md font-medium"
+                onClick={handleActualDownload}
+              >
+                下載組圖
+              </button>
+            </div>
+          </div>
+      </div>
+      )}
+
+      {/* 自訂確認模態視窗 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"> {/* Changed back to justify-center */}
+          <div className="bg-white p-6 rounded-lg shadow-xl relative max-w-md w-full my-auto"> {/* Removed ml-4 and mr-4 */}
+            <div className="modal-header flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-slate-800">訊息確認</h3>
+              {/* No close button for confirm modal as per previous versions, but added flex for consistency */}
+            </div>
+            <div className="modal-body flex flex-col items-center justify-center">
+              <p className="text-gray-700 text-lg mb-6 text-center">{confirmMessage}</p>
+              <div className="flex gap-4">
+              <button
+                  className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md font-medium"
+                  onClick={confirmAction}
+              >
+                  確定
+              </button>
+                <button
+                  className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-md font-medium"
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  取消
+                </button>
+        </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="bg-slate-800 text-white py-6 mt-auto">
+        <div className="container mx-auto px-4">
+          <div className="mb-4 text-center text-sm">
+            歡迎加入艾克斯王數位工作室的官方LINE，接收未來App版上線通知！<br />
+            我們目前正在招募 <span className="text-yellow-300 font-bold">外拍模特、IG/抖音短劇演員、廣告...等等，以及12位內部測試人員</span>，無需工程背景，只要有意願測試App，<br />
+            都歡迎在 <a href="mailto:js0980420@email.com" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">email</a> 或 <a href="https://line.me/R/ti/p/@438efvtl" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">官方LINE</a> 、<a href="https://www.instagram.com/shilin_wang/" className="underline text-blue-200 hover:text-blue-400" target="_blank" rel="noopener noreferrer">IG</a>留下報名意願，並可投遞應徵履歷、MD卡/組圖。<br />
+            有任何問題也歡迎詢問！
+          </div>
+          <p className="text-center">© 2025 艾克斯王數位工作室 - 版權所有</p>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+// 導出 ActorPlatformPreview 元件，以便在 index.js 中使用
+export default ActorPlatformPreview;
+
+
