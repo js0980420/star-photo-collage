@@ -5,13 +5,13 @@ import { getStorage } from 'firebase/storage';
 
 // 您的 Firebase 專案配置 (請替換成您自己的配置)
 const firebaseConfig = {
-  apiKey: "AIzaSyDyUIu1reBIGE0BuHXb5aZdtNH0MEOWrgo",
-  authDomain: "star-photo-collage.firebaseapp.com",
-  projectId: "star-photo-collage",
-  storageBucket: "star-photo-collage.firebasestorage.app",
-  messagingSenderId: "735736806238",
-  appId: "1:735736806238:web:f26bc5ec34b969d2956dcf",
-  measurementId: "G-4DXFHZ914S"
+  apiKey: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  authDomain: "xxxxxxxxxxxxxxxxxxxxxxx.firebaseapp.com",
+  projectId: "xxxxxxxxxxxxx",
+  storageBucket: "xxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  messagingSenderId: "xxxxxxxxxxxxxxxx",
+  appId: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  measurementId: "xxxxxxxxxxxxxxxxxxx"
 };
 
 // 初始化 Firebase
